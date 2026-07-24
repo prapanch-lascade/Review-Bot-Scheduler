@@ -1,0 +1,39 @@
+name: Review Monitor
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Every 5 minutes (UTC)
+    - cron: "*/5 * * * *"
+
+jobs:
+  appstore:
+    name: 🍎 App Store Reviews
+
+    runs-on: ubuntu-latest
+
+    env:
+      APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+      APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      APPSTORE_APP_ID: ${{ secrets.APPSTORE_APP_ID }}
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch App Store Reviews
+        run: |
+          python scripts/main.py appstore
