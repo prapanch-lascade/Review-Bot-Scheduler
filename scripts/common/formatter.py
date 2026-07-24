@@ -1,14 +1,9 @@
-from common.utils import (
-    utc_to_ist,
-    current_ist,
-    stars,
-)
+from common.utils import utc_to_ist, current_ist, stars
 
 APP_NAME = "Airlines70 - All Flights Ticket"
 
 
 def format_review(review: dict) -> str:
-
     attr = review["attributes"]
 
     rating = attr.get("rating", 0)
@@ -22,39 +17,22 @@ def format_review(review: dict) -> str:
     return f"""
 ⭐ *New App Review Received*
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📱 *Platform*      : iOS
-
-📦 *App*           : {APP_NAME}
-
-🌍 *Country*       : {territory}
-
-⭐ *Rating*         : {stars(rating)} ({rating}/5)
-
-👤 *Reviewer*      : {reviewer}
-
-📅 *Reviewed On*   : {reviewed_on}
-
+{stars(rating)} ({rating}/5)
 
 📝 *Title*
 
 {title}
 
-
 💬 *Review*
 
 {body}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 *Reviewer* : {reviewer}
+🌍 *Country*  : {territory}
+📱 *Version*  : {version}
+📅 *Reviewed* : {reviewed_on}
+🏪 *Platform* : Apple App Store
 
-🆔 *Review ID*     : {review["id"]}
+⏰ *Detected* : {current_ist()}
 
-🔄 *Version*       : {version}
-
-📢 *Source*        : Apple App Store
-
-⏰ *Detected At*   : {current_ist()}
-
-
-""".strip() + "\n\n\n"
+""".strip() + "\n\n"
