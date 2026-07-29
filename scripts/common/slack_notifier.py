@@ -1,22 +1,7 @@
-import os
-import requests
+"""Backward-compatible import surface for the Slack Web API client."""
+
+from common.slack_client import SlackClient
 
 
-SLACK_WEBHOOK = os.environ["SLACK_WEBHOOK"]
-
-
-def send_to_slack(message: str):
-
-    payload = {
-        "text": message
-    }
-
-    response = requests.post(
-        SLACK_WEBHOOK,
-        json=payload,
-        timeout=30,
-    )
-
-    response.raise_for_status()
-
-    print("Slack message sent.")
+def send_to_slack(message: str) -> str:
+    return SlackClient().post_review(message)

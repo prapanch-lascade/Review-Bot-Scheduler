@@ -7,12 +7,9 @@ on:
     # Every 5 minutes (UTC)
     - cron: "*/5 * * * *"
 
-permissions:
-  contents: write
-
 concurrency:
   group: review-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
 
@@ -21,23 +18,28 @@ jobs:
     name: 🍎 App Store Reviews
 
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
 
     env:
       APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
       APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
       APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
       APPSTORE_APP_ID: ${{ secrets.APPSTORE_APP_ID }}
-      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
     steps:
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: "3.12"
 
@@ -46,11 +48,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch App Store Reviews
+      - name: Run Tests
+        run: |
+          PYTHONPATH=scripts python -m unittest discover -s tests -v
+
+      - name: Sync App Store Reviews and Slack Replies
         run: |
           python scripts/main.py appstore
 
       - name: Commit Updated State
+        if: always()
         run: |
 
           git config --global user.name "github-actions[bot]"
@@ -65,4 +72,15 @@ jobs:
 
           git commit -m "Update App Store review state"
 
-          git push
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Git push failed; refreshing branch before retry ${attempt}/3."
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+          done
+
+          echo "Unable to push state after 3 attempts."
+          exit 1
