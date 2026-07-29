@@ -1,3 +1,32 @@
 {
-    "reviews": {}
+    "reviews": {
+        "00000183-b32a-6202-f94b-f64d00000000": {
+            "slack_ts": "1785307497.725489",
+            "last_reply_ts": null,
+            "apple_reply_sent": false
+        },
+        "00000183-b32a-6202-f94d-6ded00000000": {
+            "slack_ts": "1785307497.896869",
+            "last_reply_ts": null,
+            "apple_reply_sent": false
+        },
+        "00000183-b32a-6203-4583-a8c200000000": {
+            "slack_ts": "1785307498.039359",
+            "last_reply_ts": null,
+            "apple_reply_sent": false
+        },
+        "00000183-b32a-6203-473e-17ab00000000": {
+            "slack_ts": "1785307498.190299",
+            "last_reply_ts": null,
+            "apple_reply_sent": false
+        },
+        "00000183-b32a-6203-56dd-c5f400000000": {
+            "slack_ts": "1785307498.338299",
+            "last_reply_ts": null,
+            "apple_reply_sent": false
+        }
+    },
+    "last_review_id": "00000183-b32a-6203-56dd-c5f400000000",
+    "last_checked": "2026-07-29T06:44:58.381512+00:00",
+    "state_version": 1
 }
