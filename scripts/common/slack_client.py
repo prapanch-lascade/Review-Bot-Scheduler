@@ -30,16 +30,23 @@ class SlackClient:
         self.channel_id = channel_id or os.environ["SLACK_CHANNEL_ID"]
         self.bot_user_id = None
 
-    def _call(self, method: str, payload: dict) -> dict:
+    def _call(self, method: str, payload: dict, http_method: str = "POST") -> dict:
+        request_kwargs = {
+            "headers": {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json; charset=utf-8"},
+            "timeout": 30,
+            "retry_network_errors": http_method == "GET" or method != "chat.postMessage",
+            "retry_server_errors": http_method == "GET" or method != "chat.postMessage",
+            "operation": f"Slack {method}",
+        }
+        if http_method == "GET":
+            request_kwargs["params"] = payload
+        else:
+            request_kwargs["json"] = payload
+
         response = request_with_retries(
-            "POST",
+            http_method,
             f"{SLACK_API}/{method}",
-            headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json; charset=utf-8"},
-            json=payload,
-            timeout=30,
-            retry_network_errors=method != "chat.postMessage",
-            retry_server_errors=method != "chat.postMessage",
-            operation=f"Slack {method}",
+            **request_kwargs,
         )
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
@@ -95,7 +102,7 @@ class SlackClient:
             payload = {"channel": self.channel_id, "ts": thread_ts, "limit": 15}
             if cursor:
                 payload["cursor"] = cursor
-            data = self._call("conversations.replies", payload)
+            data = self._call("conversations.replies", payload, http_method="GET")
             page = data.get("messages", [])
             if not isinstance(page, list):
                 raise SlackApiError("conversations.replies", "invalid_messages_shape")

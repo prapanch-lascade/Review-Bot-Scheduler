@@ -35,6 +35,16 @@ class SlackClientTests(unittest.TestCase):
         self.assertEqual(context.exception.error, "rate_limited")
         self.assertEqual(context.exception.retry_after, 60.0)
 
+    def test_thread_replies_use_get_query_parameters(self):
+        client = SlackClient(token="test-token", channel_id="C123")
+        response = Response(data={"ok": True, "messages": [], "response_metadata": {}})
+        with patch("common.slack_client.request_with_retries", return_value=response) as request:
+            client.replies("123.456")
+
+        self.assertEqual(request.call_args.args[0], "GET")
+        self.assertEqual(request.call_args.kwargs["params"]["channel"], "C123")
+        self.assertEqual(request.call_args.kwargs["params"]["ts"], "123.456")
+
 
 if __name__ == "__main__":
     unittest.main()
