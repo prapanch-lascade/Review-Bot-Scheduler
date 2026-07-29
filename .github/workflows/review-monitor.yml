@@ -70,16 +70,33 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update App Store review state"
+          git fetch origin "${GITHUB_REF_NAME}"
+          if git show "origin/${GITHUB_REF_NAME}:state/appstore_reviews.json" > /tmp/remote_appstore_reviews.json 2>/dev/null; then
+            python scripts/merge_state.py /tmp/remote_appstore_reviews.json state/appstore_reviews.json
+          else
+            echo '{}' > /tmp/remote_appstore_reviews.json
+          fi
 
-          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git reset --mixed "origin/${GITHUB_REF_NAME}"
+          git add state/
+          if git diff --cached --quiet; then
+            echo "Remote already contains the state changes."
+            exit 0
+          fi
+
+          git commit -m "Update App Store review state"
 
           for attempt in 1 2 3; do
             if git push; then
               exit 0
             fi
             echo "Git push failed; refreshing branch before retry ${attempt}/3."
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git fetch origin "${GITHUB_REF_NAME}"
+            git show "origin/${GITHUB_REF_NAME}:state/appstore_reviews.json" > /tmp/remote_appstore_reviews.json
+            python scripts/merge_state.py /tmp/remote_appstore_reviews.json state/appstore_reviews.json
+            git reset --mixed "origin/${GITHUB_REF_NAME}"
+            git add state/
+            git commit -m "Update App Store review state"
           done
 
           echo "Unable to push state after 3 attempts."

@@ -221,18 +221,23 @@ def sync_slack_replies_to_apple(token: str, state: dict, slack: SlackClient) -> 
     failures = []
     for review_id, entry in reviews.items():
         if entry.get("slack_thread_disabled") or entry.get("apple_reply_sent"):
+            LOG.info("Skipping review %s: already completed or thread disabled", review_id)
             continue
         if not entry.get("slack_ts"):
             LOG.warning("Review %s has no Slack timestamp; skipping", review_id)
             continue
 
         try:
+            LOG.info("Polling Slack thread %s for review %s", entry["slack_ts"], review_id)
             messages = slack.replies(entry["slack_ts"])
+            LOG.info("Retrieved %d Slack message(s) for review %s", len(messages), review_id)
             candidates = _reply_candidates(messages, entry, slack)
             if not candidates:
+                LOG.info("No new human Slack reply found for review %s", review_id)
                 continue
 
             message = candidates[-1]
+            LOG.info("Found new human Slack reply %s for review %s", message["ts"], review_id)
             if _apple_response_exists(token, review_id):
                 entry["last_reply_ts"] = message["ts"]
                 entry["apple_reply_sent"] = True
@@ -240,6 +245,7 @@ def sync_slack_replies_to_apple(token: str, state: dict, slack: SlackClient) -> 
                 LOG.warning("Apple response already exists for review %s; Slack reply was not sent", review_id)
                 continue
 
+            LOG.info("Sending Slack reply %s to Apple review %s", message["ts"], review_id)
             reply_to_review(token, review_id, message["text"])
             entry["last_reply_ts"] = message["ts"]
             entry["apple_reply_sent"] = True
