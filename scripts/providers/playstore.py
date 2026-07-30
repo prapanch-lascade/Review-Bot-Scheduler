@@ -298,6 +298,7 @@ def reply_to_review(credentials: service_account.Credentials, review_id: str, te
 
 
 def run_playstore() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     LOG.info("Generating Google Play OAuth access token")
     credentials = _credentials()
     state = load_state("playstore")
