@@ -28,9 +28,13 @@ def merge_states(remote: dict, local: dict) -> dict:
         reply_timestamps = [value for value in reply_timestamps if isinstance(value, str)]
         if reply_timestamps:
             entry["last_reply_ts"] = max(reply_timestamps)
-        entry["apple_reply_sent"] = bool(
-            remote_entry.get("apple_reply_sent") or local_entry.get("apple_reply_sent")
-        )
+        reply_status_keys = {
+            key
+            for key in set(remote_entry) | set(local_entry)
+            if key.endswith("_reply_sent")
+        }
+        for key in reply_status_keys:
+            entry[key] = bool(remote_entry.get(key) or local_entry.get(key))
         entry["slack_thread_disabled"] = bool(
             remote_entry.get("slack_thread_disabled") or local_entry.get("slack_thread_disabled")
         )

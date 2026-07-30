@@ -1,6 +1,7 @@
 import sys
 
 from providers.appstore import run_appstore
+from providers.playstore import run_playstore
 
 
 def main():
@@ -12,6 +13,10 @@ def main():
 
     if provider == "appstore":
         run_appstore()
+        return
+
+    if provider == "playstore":
+        run_playstore()
         return
 
     raise Exception(

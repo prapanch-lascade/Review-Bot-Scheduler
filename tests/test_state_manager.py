@@ -29,6 +29,13 @@ class StateManagerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "invalid JSON"):
                     load_state("appstore")
 
+    def test_playstore_uses_separate_review_state_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            with patch("common.state_manager.STATE_DIR", state_dir):
+                save_state("playstore", {"reviews": {}})
+            self.assertTrue((state_dir / "playstore_reviews.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

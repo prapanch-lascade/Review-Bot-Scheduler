@@ -17,12 +17,12 @@ def _state_file(provider: str) -> Path:
 
     Example:
         appstore -> state/appstore_reviews.json
-        playstore -> state/playstore.json
+        playstore -> state/playstore_reviews.json
     """
 
     STATE_DIR.mkdir(exist_ok=True)
 
-    filename = "appstore_reviews.json" if provider == "appstore" else f"{provider}.json"
+    filename = f"{provider}_reviews.json"
     return STATE_DIR / filename
 
 

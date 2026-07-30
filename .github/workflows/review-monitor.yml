@@ -2,9 +2,7 @@ name: Review Monitor
 
 on:
   workflow_dispatch:
-
   schedule:
-    # Every 5 minutes (UTC)
     - cron: "*/5 * * * *"
 
 concurrency:
@@ -12,17 +10,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-
   appstore:
-
     name: 🍎 App Store Reviews
-
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     permissions:
-      contents: write
-
+      contents: read
     env:
       APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
       APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
@@ -30,61 +23,125 @@ jobs:
       APPSTORE_APP_ID: ${{ secrets.APPSTORE_APP_ID }}
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
-
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-
       - name: Setup Python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: "3.12"
-
+          cache: pip
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
+          python -m pip install -r requirements.txt
       - name: Run Tests
-        run: |
-          PYTHONPATH=scripts python -m unittest discover -s tests -v
-
+        run: PYTHONPATH=scripts python -m unittest discover -s tests -v
       - name: Sync App Store Reviews and Slack Replies
-        run: |
-          python scripts/main.py appstore
-
-      - name: Commit Updated State
+        run: python scripts/main.py appstore
+      - name: Upload App Store State
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appstore-state
+          path: state/appstore_reviews.json
+          if-no-files-found: warn
+
+  playstore:
+    name: ▶️ Google Play Reviews
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_PLAY_PACKAGE_NAME: ${{ secrets.GOOGLE_PLAY_PACKAGE_NAME }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Dependencies
         run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Sync Google Play Reviews and Slack Replies
+        run: python scripts/main.py playstore
+      - name: Upload Google Play State
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playstore-state
+          path: state/playstore_reviews.json
+          if-no-files-found: warn
 
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  commit-state:
+    name: Commit Updated State
+    needs: [appstore, playstore]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Download App Store State
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: appstore-state
+          path: state
+        continue-on-error: true
+      - name: Download Google Play State
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: playstore-state
+          path: state
+        continue-on-error: true
+      - name: Commit Updated State
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add state/
-
+          git add state/appstore_reviews.json state/playstore_reviews.json
           if git diff --cached --quiet; then
             echo "No state changes."
             exit 0
           fi
 
-          git fetch origin "${GITHUB_REF_NAME}"
-          if git show "origin/${GITHUB_REF_NAME}:state/appstore_reviews.json" > /tmp/remote_appstore_reviews.json 2>/dev/null; then
-            python scripts/merge_state.py /tmp/remote_appstore_reviews.json state/appstore_reviews.json
-          else
-            echo '{}' > /tmp/remote_appstore_reviews.json
-          fi
+          merge_remote_state() {
+            provider="$1"
+            local_file="state/${provider}_reviews.json"
+            remote_file="/tmp/remote_${provider}_reviews.json"
+            if git show "origin/${GITHUB_REF_NAME}:${local_file}" > "${remote_file}" 2>/dev/null; then
+              python scripts/merge_state.py "${remote_file}" "${local_file}"
+            fi
+          }
 
+          git fetch origin "${GITHUB_REF_NAME}"
+          merge_remote_state appstore
+          merge_remote_state playstore
           git reset --mixed "origin/${GITHUB_REF_NAME}"
-          git add state/
+          git add state/appstore_reviews.json state/playstore_reviews.json
           if git diff --cached --quiet; then
             echo "Remote already contains the state changes."
             exit 0
           fi
-
-          git commit -m "Update App Store review state"
+          git commit -m "Update review state"
 
           for attempt in 1 2 3; do
             if git push; then
@@ -92,11 +149,15 @@ jobs:
             fi
             echo "Git push failed; refreshing branch before retry ${attempt}/3."
             git fetch origin "${GITHUB_REF_NAME}"
-            git show "origin/${GITHUB_REF_NAME}:state/appstore_reviews.json" > /tmp/remote_appstore_reviews.json
-            python scripts/merge_state.py /tmp/remote_appstore_reviews.json state/appstore_reviews.json
+            merge_remote_state appstore
+            merge_remote_state playstore
             git reset --mixed "origin/${GITHUB_REF_NAME}"
-            git add state/
-            git commit -m "Update App Store review state"
+            git add state/appstore_reviews.json state/playstore_reviews.json
+            if git diff --cached --quiet; then
+              echo "Remote already contains the state changes."
+              exit 0
+            fi
+            git commit -m "Update review state"
           done
 
           echo "Unable to push state after 3 attempts."
