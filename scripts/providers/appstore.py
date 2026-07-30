@@ -230,10 +230,15 @@ def sync_slack_replies_to_apple(token: str, state: dict, slack: SlackClient) -> 
         try:
             LOG.info("Polling Slack thread %s for review %s", entry["slack_ts"], review_id)
             messages = slack.replies(entry["slack_ts"])
-            LOG.info("Retrieved %d Slack message(s) for review %s", len(messages), review_id)
+            if len(messages) > 1:
+                LOG.info(
+                    "Slack thread for review %s contains %d message(s) including the parent",
+                    review_id,
+                    len(messages),
+                )
             candidates = _reply_candidates(messages, entry, slack)
             if not candidates:
-                LOG.info("No new human Slack reply found for review %s", review_id)
+                LOG.debug("No new human Slack reply found for review %s", review_id)
                 continue
 
             message = candidates[-1]
