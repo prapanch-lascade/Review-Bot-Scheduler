@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   appstore:
-    name: 🍎 App Store Reviews
+    name: App Store Reviews
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -50,7 +50,7 @@ jobs:
           if-no-files-found: warn
 
   playstore:
-    name: ▶️ Google Play Reviews
+    name: Google Play Reviews
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -74,6 +74,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+      - name: Validate Google Play Configuration
+        run: |
+          test -n "$GOOGLE_PLAY_PACKAGE_NAME" || {
+            echo "::error::GOOGLE_PLAY_PACKAGE_NAME is missing. Add a repository secret with the exact name GOOGLE_PLAY_PACKAGE_NAME.";
+            exit 1;
+          }
+          test -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" || {
+            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is missing. Add the complete service-account JSON as a repository secret.";
+            exit 1;
+          }
       - name: Sync Google Play Reviews and Slack Replies
         run: python scripts/main.py playstore
       - name: Upload Google Play State

@@ -140,10 +140,16 @@ def sync_slack_replies(
         try:
             LOG.info("Polling Slack thread %s for %s review %s", entry["slack_ts"], display_name, review_id)
             messages = slack.replies(entry["slack_ts"])
-            LOG.info("Retrieved %d Slack message(s) for %s review %s", len(messages), display_name, review_id)
+            if len(messages) > 1:
+                LOG.info(
+                    "Slack thread for %s review %s contains %d message(s) including the parent",
+                    display_name,
+                    review_id,
+                    len(messages),
+                )
             candidates = reply_candidates(messages, entry, slack)
             if not candidates:
-                LOG.info("No new human Slack reply found for %s review %s", display_name, review_id)
+                LOG.debug("No new human Slack reply found for %s review %s", display_name, review_id)
                 continue
 
             message = candidates[-1]
