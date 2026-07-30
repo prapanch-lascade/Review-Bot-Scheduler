@@ -1,1 +1,22 @@
-{}
+{
+    "state_version": 1,
+    "reviews": {
+        "a3bcdefa-8016-40d4-8359-89191d64b28f": {
+            "slack_ts": "1785407545.119459",
+            "last_reply_ts": null,
+            "google_reply_sent": false
+        },
+        "dae48c27-dc2c-46b2-a0dc-7ea4a5d3cde1": {
+            "slack_ts": "1785407545.227499",
+            "last_reply_ts": null,
+            "google_reply_sent": false
+        },
+        "03b72805-52b2-45aa-be8d-014d4570b11e": {
+            "slack_ts": "1785407545.323049",
+            "last_reply_ts": null,
+            "google_reply_sent": false
+        }
+    },
+    "last_review_id": "03b72805-52b2-45aa-be8d-014d4570b11e",
+    "last_checked": "2026-07-30T10:32:25.355290+00:00"
+}
