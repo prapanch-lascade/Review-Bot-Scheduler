@@ -27,7 +27,17 @@ def merge_states(remote: dict, local: dict) -> dict:
         reply_timestamps = [remote_entry.get("last_reply_ts"), local_entry.get("last_reply_ts")]
         reply_timestamps = [value for value in reply_timestamps if isinstance(value, str)]
         if reply_timestamps:
-            entry["last_reply_ts"] = max(reply_timestamps)
+            latest_reply_entry = max(
+                (remote_entry, local_entry),
+                key=lambda candidate: _timestamp(candidate.get("last_reply_ts")),
+            )
+            entry["last_reply_ts"] = latest_reply_entry["last_reply_ts"]
+            if "last_sent_reply_hash" in latest_reply_entry:
+                entry["last_sent_reply_hash"] = latest_reply_entry["last_sent_reply_hash"]
+            else:
+                # A legacy entry has no hash. Do not pair a hash from an
+                # older response with the newer timestamp.
+                entry.pop("last_sent_reply_hash", None)
         reply_status_keys = {
             key
             for key in set(remote_entry) | set(local_entry)

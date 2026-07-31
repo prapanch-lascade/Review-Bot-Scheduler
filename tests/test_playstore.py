@@ -104,10 +104,11 @@ class PlayStoreTests(unittest.TestCase):
         self.assertTrue(args[1].endswith("/applications/com.example.app/reviews/play-1:reply"))
         self.assertEqual(kwargs["json"], {"replyText": "Thanks"})
 
-    def test_duplicate_reply_state_prevents_second_reply(self):
+    def test_no_new_reply_does_not_call_provider(self):
         from common.review_sync import sync_slack_replies
 
         slack = Mock()
+        slack.is_human_message.return_value = False
         send_reply = Mock()
         state = {
             "reviews": {
@@ -118,11 +119,81 @@ class PlayStoreTests(unittest.TestCase):
                 }
             }
         }
+        slack.replies.return_value = [
+            {"ts": "123.456", "user": "UBOT", "text": "review"},
+        ]
 
         sync_slack_replies("playstore", state, slack, "google_reply_sent", send_reply)
 
-        slack.replies.assert_not_called()
+        slack.replies.assert_called_once_with("123.456")
         send_reply.assert_not_called()
+
+    def test_second_reply_replaces_first_and_third_reply_is_latest(self):
+        from common.review_sync import sync_slack_replies
+
+        slack = Mock()
+        slack.is_human_message.side_effect = lambda message: message.get("user") == "U1"
+        send_reply = Mock()
+        state = {"reviews": {"play-1": {"slack_ts": "123.456"}}}
+
+        slack.replies.return_value = [
+            {"ts": "123.456", "user": "UBOT", "text": "review"},
+            {"ts": "123.500", "user": "U1", "text": "Reply 1"},
+            {"ts": "123.600", "user": "U1", "text": "Reply 2"},
+            {"ts": "123.700", "user": "U1", "text": "Reply 3"},
+        ]
+
+        sync_slack_replies("playstore", state, slack, "google_reply_sent", send_reply)
+
+        send_reply.assert_called_once_with("play-1", "Reply 3")
+        self.assertEqual(state["reviews"]["play-1"]["last_reply_ts"], "123.700")
+        self.assertTrue(state["reviews"]["play-1"]["last_sent_reply_hash"])
+
+    def test_identical_newest_reply_is_skipped_without_provider_call(self):
+        from common.review_sync import reply_hash, sync_slack_replies
+
+        slack = Mock()
+        slack.is_human_message.side_effect = lambda message: message.get("user") == "U1"
+        send_reply = Mock()
+        state = {
+            "reviews": {
+                "play-1": {
+                    "slack_ts": "123.456",
+                    "last_reply_ts": "123.500",
+                    "last_sent_reply_hash": reply_hash("Already sent"),
+                    "google_reply_sent": True,
+                }
+            }
+        }
+        slack.replies.return_value = [
+            {"ts": "123.456", "user": "UBOT", "text": "review"},
+            {"ts": "123.500", "user": "U1", "text": "older"},
+            {"ts": "123.600", "user": "U1", "text": "Already sent"},
+        ]
+
+        sync_slack_replies("playstore", state, slack, "google_reply_sent", send_reply)
+
+        send_reply.assert_not_called()
+        self.assertEqual(state["reviews"]["play-1"]["last_reply_ts"], "123.600")
+
+    def test_failed_provider_update_does_not_change_state(self):
+        from common.review_sync import sync_slack_replies
+
+        slack = Mock()
+        slack.is_human_message.side_effect = lambda message: message.get("user") == "U1"
+        send_reply = Mock(side_effect=RuntimeError("provider unavailable"))
+        state = {"reviews": {"play-1": {"slack_ts": "123.456"}}}
+        slack.replies.return_value = [
+            {"ts": "123.456", "user": "UBOT", "text": "review"},
+            {"ts": "123.600", "user": "U1", "text": "Reply"},
+        ]
+
+        with self.assertRaises(RuntimeError):
+            sync_slack_replies("playstore", state, slack, "google_reply_sent", send_reply)
+
+        self.assertNotIn("last_reply_ts", state["reviews"]["play-1"])
+        self.assertNotIn("last_sent_reply_hash", state["reviews"]["play-1"])
+        self.assertNotIn("google_reply_sent", state["reviews"]["play-1"])
 
 
 if __name__ == "__main__":

@@ -40,6 +40,19 @@ class AppStoreSyncTests(unittest.TestCase):
 
         self.assertEqual([message["ts"] for message in result], ["2.0"])
 
+    def test_reply_candidates_ignore_system_messages(self):
+        client = SlackClient(token="test-token", channel_id="C123")
+        client.bot_user_id = "UBOT"
+        messages = [
+            {"ts": "2.0", "user": "U1", "text": "human"},
+            {"ts": "3.0", "user": "U1", "subtype": "message_changed", "text": "edited"},
+            {"ts": "4.0", "user": "U1", "subtype": "thread_broadcast", "text": "broadcast"},
+        ]
+
+        result = _reply_candidates(messages, {"last_reply_ts": "1.0"}, client)
+
+        self.assertEqual([message["ts"] for message in result], ["2.0"])
+
 
 if __name__ == "__main__":
     unittest.main()

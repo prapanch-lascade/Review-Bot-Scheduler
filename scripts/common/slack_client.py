@@ -119,3 +119,15 @@ class SlackClient:
             message.get("bot_id")
             or (self.bot_user_id and message.get("user") == self.bot_user_id)
         )
+
+    def is_human_message(self, message: dict) -> bool:
+        """Return whether a thread message is an ordinary human message."""
+        if self.is_bot_message(message):
+            return False
+        if message.get("type") not in {None, "message"}:
+            return False
+        # Slack system and workflow events use a subtype. Ordinary user
+        # messages do not, while bot_message is already covered above.
+        if message.get("subtype"):
+            return False
+        return bool(message.get("user"))

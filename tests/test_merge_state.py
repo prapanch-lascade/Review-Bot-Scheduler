@@ -35,6 +35,29 @@ class StateMergeTests(unittest.TestCase):
         self.assertTrue(merged["reviews"]["r1"]["google_reply_sent"])
         self.assertEqual(merged["reviews"]["r1"]["last_reply_ts"], "2.0")
 
+    def test_merge_keeps_reply_timestamp_and_hash_from_same_snapshot(self):
+        remote = {
+            "reviews": {
+                "r1": {
+                    "last_reply_ts": "3.0",
+                    "last_sent_reply_hash": "hash-for-3",
+                }
+            }
+        }
+        local = {
+            "reviews": {
+                "r1": {
+                    "last_reply_ts": "4.0",
+                    "last_sent_reply_hash": "hash-for-4",
+                }
+            }
+        }
+
+        merged = merge_states(remote, local)
+
+        self.assertEqual(merged["reviews"]["r1"]["last_reply_ts"], "4.0")
+        self.assertEqual(merged["reviews"]["r1"]["last_sent_reply_hash"], "hash-for-4")
+
 
 if __name__ == "__main__":
     unittest.main()

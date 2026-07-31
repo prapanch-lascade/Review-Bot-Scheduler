@@ -3,12 +3,9 @@ import logging
 import os
 
 from common.jwt_generator import generate_token
-from common.slack_client import (
-    SlackApiError,
-    SlackClient,
-    SlackPermissionError,
-    SlackThreadNotFoundError,
-)
+from common.review_sync import reply_candidates as common_reply_candidates
+from common.review_sync import sync_slack_replies
+from common.slack_client import SlackClient
 from common.state_manager import load_state, save_if_changed, save_state, upsert_review
 from common.utils import current_ist, request_with_retries, stars, utc_to_ist
 
@@ -98,24 +95,6 @@ def fetch_reviews(token: str) -> list[dict]:
     return reviews
 
 
-def _apple_response_exists(token: str, review_id: str) -> bool:
-    response = request_with_retries(
-        "GET",
-        f"{APPLE_API}/customerReviews/{review_id}/response",
-        headers=_apple_headers(token),
-        timeout=30,
-        operation=f"Apple get response {review_id}",
-    )
-    if response.status_code == 404:
-        return False
-    response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise RuntimeError(f"Apple response lookup for {review_id} was not valid JSON") from exc
-    return isinstance(data, dict) and isinstance(data.get("data"), dict)
-
-
 def reply_to_review(token: str, review_id: str, text: str) -> None:
     """Create or replace Apple's single response for a customer review."""
     text = text.strip()
@@ -193,94 +172,7 @@ def sync_reviews_to_slack(reviews: list[dict], state: dict, slack: SlackClient, 
 
 
 def _reply_candidates(messages: list[dict], state_entry: dict, slack: SlackClient) -> list[dict]:
-    last_reply_ts = state_entry.get("last_reply_ts")
-    candidates = []
-    seen_timestamps = set()
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        ts = message.get("ts")
-        if not isinstance(ts, str) or ts in seen_timestamps or (last_reply_ts and ts <= last_reply_ts):
-            continue
-        seen_timestamps.add(ts)
-        if slack.is_bot_message(message):
-            continue
-        text = (message.get("text") or "").strip()
-        if text:
-            candidates.append(message)
-    return sorted(candidates, key=lambda message: message["ts"])
-
-
-def sync_slack_replies_to_apple(token: str, state: dict, slack: SlackClient) -> None:
-    reviews = state.get("reviews", {})
-    if not reviews:
-        LOG.info("No review threads to poll")
-        return
-
-    slack.identify_bot()
-    failures = []
-    for review_id, entry in reviews.items():
-        if entry.get("slack_thread_disabled") or entry.get("apple_reply_sent"):
-            LOG.info("Skipping review %s: already completed or thread disabled", review_id)
-            continue
-        if not entry.get("slack_ts"):
-            LOG.warning("Review %s has no Slack timestamp; skipping", review_id)
-            continue
-
-        try:
-            LOG.info("Polling Slack thread %s for review %s", entry["slack_ts"], review_id)
-            messages = slack.replies(entry["slack_ts"])
-            if len(messages) > 1:
-                LOG.info(
-                    "Slack thread for review %s contains %d message(s) including the parent",
-                    review_id,
-                    len(messages),
-                )
-            candidates = _reply_candidates(messages, entry, slack)
-            if not candidates:
-                LOG.debug("No new human Slack reply found for review %s", review_id)
-                continue
-
-            message = candidates[-1]
-            LOG.info("Found new human Slack reply %s for review %s", message["ts"], review_id)
-            if _apple_response_exists(token, review_id):
-                entry["last_reply_ts"] = message["ts"]
-                entry["apple_reply_sent"] = True
-                save_state("appstore", state)
-                LOG.warning("Apple response already exists for review %s; Slack reply was not sent", review_id)
-                continue
-
-            LOG.info("Sending Slack reply %s to Apple review %s", message["ts"], review_id)
-            reply_to_review(token, review_id, message["text"])
-            entry["last_reply_ts"] = message["ts"]
-            entry["apple_reply_sent"] = True
-            save_state("appstore", state)
-            LOG.info("Posted Slack reply %s to Apple review %s", message["ts"], review_id)
-        except SlackThreadNotFoundError as exc:
-            entry["slack_thread_disabled"] = True
-            save_state("appstore", state)
-            LOG.error("Slack thread for review %s was deleted or unavailable: %s", review_id, exc)
-            failures.append(review_id)
-        except SlackPermissionError as exc:
-            LOG.error(
-                "Slack permission failure for review %s: %s. If bot-token access is rejected, "
-                "configure SLACK_USER_TOKEN with channels:history/groups:history.",
-                review_id,
-                exc,
-            )
-            raise
-        except SlackApiError as exc:
-            LOG.error("Slack API failure for review %s: %s", review_id, exc)
-            if exc.error == "rate_limited":
-                LOG.error("Slack rate limit was exhausted after Retry-After retries; try again next workflow run")
-                raise
-            failures.append(review_id)
-        except Exception as exc:
-            LOG.exception("Failed processing Apple reply for review %s: %s", review_id, exc)
-            failures.append(review_id)
-
-    if failures:
-        raise RuntimeError(f"Review synchronization failed for {len(failures)} review(s): {', '.join(failures)}")
+    return common_reply_candidates(messages, state_entry, slack)
 
 
 def run_appstore() -> None:
@@ -305,7 +197,14 @@ def run_appstore() -> None:
             LOG.info("Initial sync found no reviews")
         return
 
-    sync_slack_replies_to_apple(token, state, slack)
+    sync_slack_replies(
+        "appstore",
+        state,
+        slack,
+        "apple_reply_sent",
+        lambda review_id, text: reply_to_review(token, review_id, text),
+        "Apple App Store",
+    )
 
     if state != original_state:
         save_if_changed("appstore", original_state, state)

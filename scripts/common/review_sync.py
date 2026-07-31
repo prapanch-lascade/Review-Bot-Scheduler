@@ -1,5 +1,6 @@
 """Provider-neutral review selection, posting, and Slack reply polling helpers."""
 
+import hashlib
 import logging
 
 from common.slack_client import (
@@ -12,6 +13,11 @@ from common.state_manager import save_state, upsert_review
 
 
 LOG = logging.getLogger(__name__)
+
+
+def reply_hash(text: str) -> str:
+    """Return a stable hash for the normalized response text."""
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()
 
 
 def select_new_reviews(
@@ -93,7 +99,7 @@ def post_new_reviews(
 
 
 def reply_candidates(messages: list[dict], state_entry: dict, slack: SlackClient) -> list[dict]:
-    """Return unique, newer, non-bot, non-empty human replies."""
+    """Return unique, newer, non-bot, non-system, non-empty human replies."""
     last_reply_ts = state_entry.get("last_reply_ts")
     candidates = []
     seen_timestamps = set()
@@ -104,7 +110,7 @@ def reply_candidates(messages: list[dict], state_entry: dict, slack: SlackClient
         if not isinstance(ts, str) or ts in seen_timestamps or (last_reply_ts and ts <= last_reply_ts):
             continue
         seen_timestamps.add(ts)
-        if slack.is_bot_message(message):
+        if not slack.is_human_message(message):
             continue
         text = (message.get("text") or "").strip()
         if text:
@@ -120,7 +126,7 @@ def sync_slack_replies(
     send_reply,
     display_name: str | None = None,
 ) -> None:
-    """Poll provider review threads and send each newest human reply once."""
+    """Apply the newest human Slack reply as the provider's single response."""
     display_name = display_name or provider
     reviews = state.get("reviews", {})
     if not reviews:
@@ -130,8 +136,8 @@ def sync_slack_replies(
     slack.identify_bot()
     failures = []
     for review_id, entry in reviews.items():
-        if entry.get("slack_thread_disabled") or entry.get(reply_sent_key):
-            LOG.info("Skipping %s review %s: already completed or thread disabled", display_name, review_id)
+        if entry.get("slack_thread_disabled"):
+            LOG.info("Skipping %s review %s: Slack thread disabled", display_name, review_id)
             continue
         if not entry.get("slack_ts"):
             LOG.warning("%s review %s has no Slack timestamp; skipping", display_name, review_id)
@@ -154,9 +160,24 @@ def sync_slack_replies(
 
             message = candidates[-1]
             LOG.info("Found new human Slack reply %s for %s review %s", message["ts"], display_name, review_id)
+            normalized_text = message["text"].strip()
+            message_hash = reply_hash(normalized_text)
+            if entry.get("last_sent_reply_hash") == message_hash:
+                # Advance the timestamp so this already-applied reply is not
+                # reconsidered, without making another provider API call.
+                entry["last_reply_ts"] = message["ts"]
+                entry[reply_sent_key] = True
+                save_state(provider, state)
+                LOG.info(
+                    "Skipping %s review %s: newest Slack reply matches the response already sent",
+                    display_name,
+                    review_id,
+                )
+                continue
             LOG.info("Sending Slack reply %s to %s review %s", message["ts"], display_name, review_id)
-            send_reply(review_id, message["text"])
+            send_reply(review_id, normalized_text)
             entry["last_reply_ts"] = message["ts"]
+            entry["last_sent_reply_hash"] = message_hash
             entry[reply_sent_key] = True
             save_state(provider, state)
             LOG.info("Posted Slack reply %s to %s review %s", message["ts"], display_name, review_id)
