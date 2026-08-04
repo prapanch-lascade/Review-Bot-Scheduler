@@ -13,17 +13,31 @@ STATE_VERSION = 1
 
 def _state_file(provider: str) -> Path:
     """
-    Returns the JSON state file for a provider.
+    Returns the JSON state file for an app + provider.
 
-    Example:
-        appstore -> state/appstore_reviews.json
-        playstore -> state/playstore_reviews.json
+    The app is taken from the APP_SLUG environment variable so multiple apps
+    can share this code without sharing state. Each app gets its own folder
+    holding one file per provider:
+
+        state/airlines70/appstore.json
+        state/airlines70/playstore.json
+
+    Only the providers an app actually uses are created (an Android-only app
+    only ever writes playstore.json). When APP_SLUG is unset the legacy
+    single-app names are used, keeping older runs and tests working:
+
+        state/appstore_reviews.json
+        state/playstore_reviews.json
     """
 
-    STATE_DIR.mkdir(exist_ok=True)
+    app_slug = os.environ.get("APP_SLUG", "").strip()
+    if app_slug:
+        app_dir = STATE_DIR / app_slug
+        app_dir.mkdir(parents=True, exist_ok=True)
+        return app_dir / f"{provider}.json"
 
-    filename = f"{provider}_reviews.json"
-    return STATE_DIR / filename
+    STATE_DIR.mkdir(exist_ok=True)
+    return STATE_DIR / f"{provider}_reviews.json"
 
 
 def load_state(provider: str) -> dict:
@@ -77,8 +91,8 @@ def save_state(provider: str, state: dict):
     state["last_checked"] = datetime.now(timezone.utc).isoformat()
     state.setdefault("reviews", {})
 
-    STATE_DIR.mkdir(exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{file.name}.", suffix=".tmp", dir=STATE_DIR)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{file.name}.", suffix=".tmp", dir=file.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=4)
