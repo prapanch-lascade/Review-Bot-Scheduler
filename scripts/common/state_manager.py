@@ -1,9 +1,12 @@
 import json
 from datetime import datetime, timezone
+import logging
 import os
 from pathlib import Path
 import tempfile
 
+
+LOG = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -54,8 +57,10 @@ def load_state(provider: str) -> dict:
     file = _state_file(provider)
 
     if not file.exists():
-
+        LOG.info("No existing state at %s; starting fresh (initial sync)", file)
         return _empty_state()
+
+    LOG.info("Loading state from %s", file)
 
     try:
         with open(file, "r", encoding="utf-8") as f:
@@ -100,6 +105,7 @@ def save_state(provider: str, state: dict):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary_name, file)
+        LOG.debug("Saved %s state to %s", provider, file)
     except Exception:
         try:
             os.unlink(temporary_name)

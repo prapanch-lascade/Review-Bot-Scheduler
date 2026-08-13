@@ -40,10 +40,10 @@ adding an app is config-only.
 ## Architecture
 
 ```
-App repo (e.g. Lascade-Co/airlines70)     .github/workflows/review-sync-trigger.yml
+App repo (e.g. prapanch-lascade/airlines70)  .github/workflows/review-sync-trigger.yml
    cron */5  →  peter-evans/repository-dispatch@v4
    token: CENTRAL_DISPATCH_TOKEN (app-repo secret)
-   repository: Lascade-Co/review-bot
+   repository: prapanch-lascade/Review-Bot-Scheduler
    event-type: review-sync
    client-payload: { "app": "airlines70", "project_slug": "<infisical slug>", "env_slug": "prod" }
         │
@@ -300,7 +300,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ secrets.CENTRAL_DISPATCH_TOKEN }}     # app-repo secret; may dispatch to review-bot
-          repository: Lascade-Co/review-bot                 # <- the central repo
+          repository: prapanch-lascade/Review-Bot-Scheduler                 # <- the central repo
           event-type: review-sync
           client-payload: >-
             {
@@ -323,7 +323,7 @@ Superseded. Airlines70's schedule moves to its app repo's trigger.
 - `SLACK_BOT_TOKEN` — shared bot token.
 
 **Each app repo secret**
-- `CENTRAL_DISPATCH_TOKEN` — PAT or GitHub App token allowed to POST `repository_dispatch` to `Lascade-Co/review-bot`.
+- `CENTRAL_DISPATCH_TOKEN` — PAT or GitHub App token allowed to POST `repository_dispatch` to `prapanch-lascade/Review-Bot-Scheduler`.
 
 **Infisical (per app project)**
 - Add a **`/reviews` folder** in env `prod` with the keys in the table above.

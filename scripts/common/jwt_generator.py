@@ -1,37 +1,56 @@
-import os
 import time
 import jwt
 
+# ==============================
+# Apple App Store Connect Config
+# ==============================
 
-def generate_token() -> str:
-    """
-    Generate App Store Connect JWT.
-    """
+KEY_ID = "A6YCMFP8CT"
+ISSUER_ID = "0b7d1bed-bcc3-4d32-b7df-d70367f6481f"
 
-    key_id = os.environ["APPSTORE_API_KEY_ID"]
-    issuer_id = os.environ["APPSTORE_ISSUER_ID"]
-    private_key = os.environ["APPSTORE_API_PRIVATE_KEY"]
+PRIVATE_KEY = '''-----BEGIN PRIVATE KEY-----
+MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgidLFArpoYHZiX+3J
+Zi19Dxx5SymhxPgQULhKvFx/sXGgCgYIKoZIzj0DAQehRANCAAQHau0M5jOHydmD
+V3jqJUfWFRRyK6Z4qUBezVoIHdnJ3tukpJq/DLbj7zInd3giLfahjCRH+YfjSFqb
+5dafrZG5
+-----END PRIVATE KEY-----'''
 
-    now = int(time.time())
+# ==============================
+# Generate JWT
+# ==============================
 
-    payload = {
-        "iss": issuer_id,
-        "iat": now,
-        "exp": now + (20 * 60),  # 20 minutes
-        "aud": "appstoreconnect-v1",
-    }
+now = int(time.time())
 
-    headers = {
-        "alg": "ES256",
-        "kid": key_id,
-        "typ": "JWT",
-    }
+payload = {
+    "iss": ISSUER_ID,
+    "iat": now,
+    "exp": now + (20 * 60),  # Token valid for 20 minutes
+    "aud": "appstoreconnect-v1",
+}
 
-    token = jwt.encode(
-        payload,
-        private_key,
-        algorithm="ES256",
-        headers=headers,
-    )
+headers = {
+    "alg": "ES256",
+    "kid": KEY_ID,
+    "typ": "JWT",
+}
 
-    return token
+token = jwt.encode(
+    payload,
+    PRIVATE_KEY,
+    algorithm="ES256",
+    headers=headers,
+)
+
+print("\nJWT Token:\n")
+print(token)
+
+
+
+#  key_id = 'A6YCMFP8CT'
+#     issuer_id = '0b7d1bed-bcc3-4d32-b7df-d70367f6481f'
+#     private_key = '''-----BEGIN PRIVATE KEY-----
+# MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgidLFArpoYHZiX+3J
+# Zi19Dxx5SymhxPgQULhKvFx/sXGgCgYIKoZIzj0DAQehRANCAAQHau0M5jOHydmD
+# V3jqJUfWFRRyK6Z4qUBezVoIHdnJ3tukpJq/DLbj7zInd3giLfahjCRH+YfjSFqb
+# 5dafrZG5
+# -----END PRIVATE KEY-----'''
