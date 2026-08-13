@@ -1,0 +1,41 @@
+# Copy this file into an APP repo at .github/workflows/review-sync-trigger.yml
+# and edit the client-payload values for that app.
+#
+# Requirements in the app repo:
+#   - Secret CENTRAL_DISPATCH_TOKEN: a PAT / GitHub App token allowed to POST
+#     repository_dispatch to the central repo (prapanch-lascade/Review-Bot-Scheduler).
+#
+# The payload carries only non-secret identifiers:
+#   - app          : YOUR own short slug for this app (state folder + Slack routing);
+#                    NOT an Infisical value. e.g. "airlines70".
+#   - project_slug : the Infisical PROJECT slug to read secrets from.
+#   - env_slug     : the Infisical ENVIRONMENT slug within that project (e.g. prod).
+# The bot's real secrets are read by the central workflow from that project's
+# /reviews folder, so no credentials ever travel in this payload.
+
+name: Trigger Review Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to central review-bot
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.CENTRAL_DISPATCH_TOKEN }}
+          repository: prapanch-lascade/Review-Bot-Scheduler   # <- central repo (owner/name)
+          event-type: review-sync
+          client-payload: >-
+            {
+              "app": "airlines70",
+              "project_slug": "the-infisical-project-slug",
+              "env_slug": "prod"
+            }

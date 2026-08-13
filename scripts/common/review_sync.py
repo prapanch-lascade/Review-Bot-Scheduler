@@ -33,6 +33,7 @@ def select_new_reviews(
         return [
             review
             for review in reviews[:initial_count]
+            #  review id getter ?
             if review_id_getter(review) not in known_ids
         ]
 

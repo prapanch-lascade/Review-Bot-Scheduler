@@ -297,8 +297,17 @@ def reply_to_review(credentials: service_account.Credentials, review_id: str, te
         raise RuntimeError(f"Google Play reply response for {review_id} was invalid")
 
 
+REQUIRED_PLAYSTORE_ENV = (
+    "GOOGLE_PLAY_PACKAGE_NAME",
+    "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
+)
+
+
 def run_playstore() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if not all(os.environ.get(name) for name in REQUIRED_PLAYSTORE_ENV):
+        LOG.info("Google Play not configured for this app; skipping")
+        return
     LOG.info("Generating Google Play OAuth access token")
     credentials = _credentials()
     state = load_state("playstore")

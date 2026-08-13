@@ -175,8 +175,19 @@ def _reply_candidates(messages: list[dict], state_entry: dict, slack: SlackClien
     return common_reply_candidates(messages, state_entry, slack)
 
 
+REQUIRED_APPSTORE_ENV = (
+    "APPSTORE_API_KEY_ID",
+    "APPSTORE_ISSUER_ID",
+    "APPSTORE_API_PRIVATE_KEY",
+    "APPSTORE_APP_ID",
+)
+
+
 def run_appstore() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if not all(os.environ.get(name) for name in REQUIRED_APPSTORE_ENV):
+        LOG.info("App Store not configured for this app; skipping")
+        return
     LOG.info("Generating App Store Connect JWT")
     token = generate_token()
     state = load_state("appstore")

@@ -1,9 +1,12 @@
 import json
 from datetime import datetime, timezone
+import logging
 import os
 from pathlib import Path
 import tempfile
 
+
+LOG = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -13,17 +16,31 @@ STATE_VERSION = 1
 
 def _state_file(provider: str) -> Path:
     """
-    Returns the JSON state file for a provider.
+    Returns the JSON state file for an app + provider.
 
-    Example:
-        appstore -> state/appstore_reviews.json
-        playstore -> state/playstore_reviews.json
+    The app is taken from the APP_SLUG environment variable so multiple apps
+    can share this code without sharing state. Each app gets its own folder
+    holding one file per provider:
+
+        state/airlines70/appstore.json
+        state/airlines70/playstore.json
+
+    Only the providers an app actually uses are created (an Android-only app
+    only ever writes playstore.json). When APP_SLUG is unset the legacy
+    single-app names are used, keeping older runs and tests working:
+
+        state/appstore_reviews.json
+        state/playstore_reviews.json
     """
 
-    STATE_DIR.mkdir(exist_ok=True)
+    app_slug = os.environ.get("APP_SLUG", "").strip()
+    if app_slug:
+        app_dir = STATE_DIR / app_slug
+        app_dir.mkdir(parents=True, exist_ok=True)
+        return app_dir / f"{provider}.json"
 
-    filename = f"{provider}_reviews.json"
-    return STATE_DIR / filename
+    STATE_DIR.mkdir(exist_ok=True)
+    return STATE_DIR / f"{provider}_reviews.json"
 
 
 def load_state(provider: str) -> dict:
@@ -40,8 +57,10 @@ def load_state(provider: str) -> dict:
     file = _state_file(provider)
 
     if not file.exists():
-
+        LOG.info("No existing state at %s; starting fresh (initial sync)", file)
         return _empty_state()
+
+    LOG.info("Loading state from %s", file)
 
     try:
         with open(file, "r", encoding="utf-8") as f:
@@ -77,8 +96,8 @@ def save_state(provider: str, state: dict):
     state["last_checked"] = datetime.now(timezone.utc).isoformat()
     state.setdefault("reviews", {})
 
-    STATE_DIR.mkdir(exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{file.name}.", suffix=".tmp", dir=STATE_DIR)
+    file.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{file.name}.", suffix=".tmp", dir=file.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=4)
@@ -86,6 +105,7 @@ def save_state(provider: str, state: dict):
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary_name, file)
+        LOG.debug("Saved %s state to %s", provider, file)
     except Exception:
         try:
             os.unlink(temporary_name)
