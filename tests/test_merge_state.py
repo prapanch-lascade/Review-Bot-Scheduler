@@ -58,6 +58,14 @@ class StateMergeTests(unittest.TestCase):
         self.assertEqual(merged["reviews"]["r1"]["last_reply_ts"], "4.0")
         self.assertEqual(merged["reviews"]["r1"]["last_sent_reply_hash"], "hash-for-4")
 
+    def test_merge_unions_posted_ids(self):
+        remote = {"posted_ids": ["a", "b"], "reviews": {}}
+        local = {"posted_ids": ["b", "c"], "reviews": {}}
+
+        merged = merge_states(remote, local)
+
+        self.assertEqual(merged["posted_ids"], ["a", "b", "c"])
+
 
 if __name__ == "__main__":
     unittest.main()

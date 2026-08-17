@@ -21,6 +21,7 @@ GOOGLE_PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 INITIAL_SYNC_COUNT = 5
 MAX_RESULTS = 100
 MAX_REPLY_LENGTH = 350
+PAGE_CAP = 10
 
 
 def _package_name() -> str:
@@ -133,50 +134,83 @@ def _log_failure(
     )
 
 
-def fetch_reviews(credentials: service_account.Credentials) -> list[dict]:
+def fetch_reviews(
+    credentials: service_account.Credentials,
+    stop_at_id: str | None = None,
+    max_pages: int = PAGE_CAP,
+) -> list[dict]:
+    """Fetch Google Play reviews, following pagination until the boundary or cap.
+
+    Google returns roughly the last 7 days, so paging is naturally bounded; the
+    cap is a safety net. ``stop_at_id`` lets an incremental run stop early once it
+    reaches the last processed review.
+    """
     package_name = _package_name()
     endpoint = f"{GOOGLE_PLAY_API}/applications/{package_name}/reviews"
-    try:
-        response = request_with_retries(
-            "GET",
-            endpoint,
-            headers=_headers(credentials),
-            params={"maxResults": MAX_RESULTS},
-            timeout=30,
-            operation="Google Play list reviews",
-        )
-    except Exception as exc:
-        _log_failure("N/A", endpoint, str(exc))
-        raise
-    if not response.ok:
-        _log_failure("N/A", endpoint, response.text[:500], response.status_code)
-        response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        _log_failure("N/A", endpoint, "response was not valid JSON", response.status_code, "not_applicable")
-        raise RuntimeError("Google Play reviews response was not valid JSON") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("reviews", []), list):
-        _log_failure("N/A", endpoint, "response has no reviews list", response.status_code, "not_applicable")
-        raise RuntimeError("Google Play reviews response has no reviews list")
+    raw_reviews: list[dict] = []
+    page_token = None
+    pages = 0
+    stopped_early = False
 
-    reviews = data.get("reviews", [])
-    pagination = data.get("tokenPagination")
-    next_page = pagination.get("nextPageToken") if isinstance(pagination, dict) else None
-    if next_page:
+    while pages < max_pages:
+        params = {"maxResults": MAX_RESULTS}
+        if page_token:
+            params["token"] = page_token
+        try:
+            response = request_with_retries(
+                "GET",
+                endpoint,
+                headers=_headers(credentials),
+                params=params,
+                timeout=30,
+                operation="Google Play list reviews",
+            )
+        except Exception as exc:
+            _log_failure("N/A", endpoint, str(exc))
+            raise
+        if not response.ok:
+            _log_failure("N/A", endpoint, response.text[:500], response.status_code)
+            response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            _log_failure("N/A", endpoint, "response was not valid JSON", response.status_code, "not_applicable")
+            raise RuntimeError("Google Play reviews response was not valid JSON") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("reviews", []), list):
+            _log_failure("N/A", endpoint, "response has no reviews list", response.status_code, "not_applicable")
+            raise RuntimeError("Google Play reviews response has no reviews list")
+
+        page = data.get("reviews", [])
+        raw_reviews.extend(page)
+        pages += 1
+
+        if stop_at_id is not None and any(
+            isinstance(review, dict) and review.get("reviewId") == stop_at_id for review in page
+        ):
+            stopped_early = True
+            break
+
+        pagination = data.get("tokenPagination")
+        page_token = pagination.get("nextPageToken") if isinstance(pagination, dict) else None
+        if not page_token:
+            break
+
+    if page_token and not stopped_early:
         LOG.warning(
-            "Google Play returned another review page; pagination is intentionally disabled, "
-            "so only the first page will be processed"
+            "Google Play review pagination stopped at page cap %d; older reviews were not fetched this run",
+            max_pages,
         )
+
     valid_reviews = []
-    for review in reviews:
+    for review in raw_reviews:
         review_id = review.get("reviewId", "N/A") if isinstance(review, dict) else "N/A"
         try:
             _validate_review(review)
         except RuntimeError as exc:
-            _log_failure(str(review_id), endpoint, str(exc), response.status_code)
+            _log_failure(str(review_id), endpoint, str(exc), "N/A")
             continue
         valid_reviews.append(review)
+    LOG.info("Fetched %d Google Play review(s) across %d page(s)", len(valid_reviews), pages)
     valid_reviews.sort(
         key=lambda review: _timestamp_value(_user_comment(review).get("lastModified")),
         reverse=True,
@@ -317,7 +351,10 @@ def run_playstore() -> None:
     existing_reply_state_changed = False
 
     LOG.info("Fetching Google Play reviews")
-    reviews = fetch_reviews(credentials)
+    if initial_sync:
+        reviews = fetch_reviews(credentials, max_pages=1)
+    else:
+        reviews = fetch_reviews(credentials, stop_at_id=state.get("last_review_id"))
     LOG.info("Fetched %d Google Play review(s)", len(reviews))
     for review in reviews:
         review_id = _review_id(review)

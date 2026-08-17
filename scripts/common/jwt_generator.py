@@ -1,56 +1,54 @@
+import logging
+import os
 import time
+
 import jwt
 
-# ==============================
-# Apple App Store Connect Config
-# ==============================
 
-KEY_ID = "A6YCMFP8CT"
-ISSUER_ID = "0b7d1bed-bcc3-4d32-b7df-d70367f6481f"
+LOG = logging.getLogger(__name__)
 
-PRIVATE_KEY = '''-----BEGIN PRIVATE KEY-----
-MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgidLFArpoYHZiX+3J
-Zi19Dxx5SymhxPgQULhKvFx/sXGgCgYIKoZIzj0DAQehRANCAAQHau0M5jOHydmD
-V3jqJUfWFRRyK6Z4qUBezVoIHdnJ3tukpJq/DLbj7zInd3giLfahjCRH+YfjSFqb
-5dafrZG5
------END PRIVATE KEY-----'''
-
-# ==============================
-# Generate JWT
-# ==============================
-
-now = int(time.time())
-
-payload = {
-    "iss": ISSUER_ID,
-    "iat": now,
-    "exp": now + (20 * 60),  # Token valid for 20 minutes
-    "aud": "appstoreconnect-v1",
-}
-
-headers = {
-    "alg": "ES256",
-    "kid": KEY_ID,
-    "typ": "JWT",
-}
-
-token = jwt.encode(
-    payload,
-    PRIVATE_KEY,
-    algorithm="ES256",
-    headers=headers,
-)
-
-print("\nJWT Token:\n")
-print(token)
+# Apple rejects tokens older than 20 minutes.
+APPSTORE_TOKEN_TTL_SECONDS = 20 * 60
 
 
+def generate_token() -> str:
+    """
+    Generate a short-lived App Store Connect ES256 JWT.
 
-#  key_id = 'A6YCMFP8CT'
-#     issuer_id = '0b7d1bed-bcc3-4d32-b7df-d70367f6481f'
-#     private_key = '''-----BEGIN PRIVATE KEY-----
-# MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgidLFArpoYHZiX+3J
-# Zi19Dxx5SymhxPgQULhKvFx/sXGgCgYIKoZIzj0DAQehRANCAAQHau0M5jOHydmD
-# V3jqJUfWFRRyK6Z4qUBezVoIHdnJ3tukpJq/DLbj7zInd3giLfahjCRH+YfjSFqb
-# 5dafrZG5
-# -----END PRIVATE KEY-----'''
+    All credentials are read from the environment (supplied by the workflow's
+    secrets). Nothing is hardcoded, and neither the key nor the token is ever
+    logged.
+    """
+
+    key_id = os.environ["APPSTORE_API_KEY_ID"]
+    issuer_id = os.environ["APPSTORE_ISSUER_ID"]
+    private_key = os.environ["APPSTORE_API_PRIVATE_KEY"]
+
+    now = int(time.time())
+
+    payload = {
+        "iss": issuer_id,
+        "iat": now,
+        "exp": now + APPSTORE_TOKEN_TTL_SECONDS,
+        "aud": "appstoreconnect-v1",
+    }
+
+    headers = {
+        "alg": "ES256",
+        "kid": key_id,
+        "typ": "JWT",
+    }
+
+    token = jwt.encode(
+        payload,
+        private_key,
+        algorithm="ES256",
+        headers=headers,
+    )
+
+    LOG.info(
+        "Generated App Store Connect JWT (valid %d minutes)",
+        APPSTORE_TOKEN_TTL_SECONDS // 60,
+    )
+
+    return token

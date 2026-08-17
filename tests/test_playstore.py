@@ -90,6 +90,23 @@ class PlayStoreTests(unittest.TestCase):
 
     @patch("providers.playstore._package_name", return_value="com.example.app")
     @patch("providers.playstore.request_with_retries")
+    def test_fetch_reviews_follows_next_page_token(self, request, package_name):
+        page1 = Mock(ok=True, status_code=200, text="")
+        page1.json.return_value = {
+            "reviews": [review("r1")],
+            "tokenPagination": {"nextPageToken": "T2"},
+        }
+        page2 = Mock(ok=True, status_code=200, text="")
+        page2.json.return_value = {"reviews": [review("r2")]}
+        request.side_effect = [page1, page2]
+
+        result = fetch_reviews(Mock(token="access-token"))
+
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual({item["reviewId"] for item in result}, {"r1", "r2"})
+
+    @patch("providers.playstore._package_name", return_value="com.example.app")
+    @patch("providers.playstore.request_with_retries")
     def test_reply_uses_official_endpoint_and_payload(self, request, package_name):
         response = Mock()
         response.json.return_value = {"result": {"replyText": "Thanks"}}

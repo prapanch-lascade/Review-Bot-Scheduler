@@ -11,7 +11,7 @@ LOG = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 STATE_DIR = ROOT_DIR / "state"
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 
 def _state_file(provider: str) -> Path:
@@ -80,12 +80,33 @@ def load_state(provider: str) -> dict:
     state.setdefault("last_review_id", None)
     state.setdefault("last_checked", None)
     state.setdefault("reviews", {})
+    state.setdefault("posted_ids", [])
     state.setdefault("state_version", STATE_VERSION)
+
+    # v1 -> v2 migration: posted_ids is the permanent dedup source, and each
+    # review entry needs a posted_at for the pruning window. Backfill both so an
+    # older state file never re-posts or drops a review after this upgrade.
+    if not isinstance(state["posted_ids"], list):
+        raise RuntimeError(f"State 'posted_ids' must be a list: {file}")
+    known = set(state["posted_ids"])
+    for review_id in state["reviews"]:
+        if review_id not in known:
+            state["posted_ids"].append(review_id)
+            known.add(review_id)
+    fallback_posted_at = state.get("last_checked") or now_iso()
+    for entry in state["reviews"].values():
+        entry.setdefault("posted_at", fallback_posted_at)
     return state
 
 
 def _empty_state() -> dict:
-    return {"state_version": STATE_VERSION, "last_review_id": None, "last_checked": None, "reviews": {}}
+    return {
+        "state_version": STATE_VERSION,
+        "last_review_id": None,
+        "last_checked": None,
+        "posted_ids": [],
+        "reviews": {},
+    }
 
 
 def save_state(provider: str, state: dict):
@@ -126,10 +147,22 @@ def get_last_review_id(
     )
 
 
+def now_iso() -> str:
+    """Current UTC time as an ISO-8601 string (used for posted_at/replied_at)."""
+    return datetime.now(timezone.utc).isoformat()
+
+
 def upsert_review(state: dict, review_id: str, **values) -> None:
     state.setdefault("reviews", {})
     state["reviews"].setdefault(review_id, {})
     state["reviews"][review_id].update(values)
+
+
+def mark_posted(state: dict, review_id: str) -> None:
+    """Record a review id in the permanent dedup set (never pruned)."""
+    ids = state.setdefault("posted_ids", [])
+    if review_id not in ids:
+        ids.append(review_id)
 
 
 def save_if_changed(provider: str, original: dict, state: dict) -> bool:

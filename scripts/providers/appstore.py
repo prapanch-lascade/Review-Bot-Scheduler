@@ -6,13 +6,21 @@ from common.jwt_generator import generate_token
 from common.review_sync import reply_candidates as common_reply_candidates
 from common.review_sync import sync_slack_replies
 from common.slack_client import SlackClient
-from common.state_manager import load_state, save_if_changed, save_state, upsert_review
+from common.state_manager import (
+    load_state,
+    mark_posted,
+    now_iso,
+    save_if_changed,
+    save_state,
+    upsert_review,
+)
 from common.utils import current_ist, request_with_retries, stars, utc_to_ist
 
 
 LOG = logging.getLogger(__name__)
 APPLE_API = "https://api.appstoreconnect.apple.com/v1"
 INITIAL_SYNC_COUNT = 5
+PAGE_CAP = 25
 
 
 def _apple_headers(token: str) -> dict:
@@ -71,26 +79,55 @@ def _validate_review(review: object) -> None:
         raise RuntimeError(f"Apple review {review['id']} has an invalid rating")
 
 
-def fetch_reviews(token: str) -> list[dict]:
-    response = request_with_retries(
-        "GET",
-        f"{APPLE_API}/apps/{os.environ['APPSTORE_APP_ID']}/customerReviews",
-        headers=_apple_headers(token),
-        params={"limit": 200, "sort": "-createdDate"},
-        timeout=30,
-        operation="Apple list customer reviews",
-    )
-    response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise RuntimeError("Apple customer reviews response was not valid JSON") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
-        raise RuntimeError("Apple customer reviews response has no data list")
+def fetch_reviews(token: str, stop_at_id: str | None = None, max_pages: int = PAGE_CAP) -> list[dict]:
+    """Fetch Apple reviews, following pagination until the boundary or the cap.
 
-    reviews = data["data"]
-    for review in reviews:
-        _validate_review(review)
+    Apple sorts by createdDate (immutable), so once ``stop_at_id`` appears in a
+    page everything older is already known and paging can stop.
+    """
+    url = f"{APPLE_API}/apps/{os.environ['APPSTORE_APP_ID']}/customerReviews"
+    params = {"limit": 200, "sort": "-createdDate"}
+    reviews: list[dict] = []
+    pages = 0
+    stopped_early = False
+
+    while url and pages < max_pages:
+        response = request_with_retries(
+            "GET",
+            url,
+            headers=_apple_headers(token),
+            params=params,
+            timeout=30,
+            operation="Apple list customer reviews",
+        )
+        response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Apple customer reviews response was not valid JSON") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+            raise RuntimeError("Apple customer reviews response has no data list")
+
+        page = data["data"]
+        for review in page:
+            _validate_review(review)
+        reviews.extend(page)
+        pages += 1
+
+        if stop_at_id is not None and any(review["id"] == stop_at_id for review in page):
+            stopped_early = True
+            break
+
+        # Apple's next link already carries the cursor + query; drop params.
+        url = (data.get("links") or {}).get("next")
+        params = None
+
+    if url and not stopped_early:
+        LOG.warning(
+            "Apple review pagination stopped at page cap %d; older reviews were not fetched this run",
+            max_pages,
+        )
+    LOG.info("Fetched %d Apple review(s) across %d page(s)", len(reviews), pages)
     reviews.sort(key=lambda review: review["attributes"]["createdDate"], reverse=True)
     return reviews
 
@@ -131,7 +168,7 @@ def reply_to_review(token: str, review_id: str, text: str) -> None:
 
 
 def _new_reviews(reviews: list[dict], state: dict, initial_sync: bool) -> list[dict]:
-    known_ids = set(state.get("reviews", {}))
+    known_ids = set(state.get("posted_ids", [])) | set(state.get("reviews", {}))
     if initial_sync:
         # Also makes an interrupted initial sync safely resumable.
         return [review for review in reviews[:INITIAL_SYNC_COUNT] if review["id"] not in known_ids]
@@ -163,7 +200,15 @@ def sync_reviews_to_slack(reviews: list[dict], state: dict, slack: SlackClient, 
     for review in reversed(new_reviews):
         review_id = review["id"]
         slack_ts = slack.post_review(format_review(review))
-        upsert_review(state, review_id, slack_ts=slack_ts, last_reply_ts=None, apple_reply_sent=False)
+        upsert_review(
+            state,
+            review_id,
+            slack_ts=slack_ts,
+            last_reply_ts=None,
+            posted_at=now_iso(),
+            apple_reply_sent=False,
+        )
+        mark_posted(state, review_id)
         save_state("appstore", state)
         LOG.info("Posted review %s to Slack thread %s", review_id, slack_ts)
 
@@ -196,7 +241,11 @@ def run_appstore() -> None:
     slack = SlackClient()
 
     LOG.info("Fetching App Store reviews")
-    reviews = fetch_reviews(token)
+    if initial_sync:
+        # Only the newest page is needed to post the first few reviews.
+        reviews = fetch_reviews(token, max_pages=1)
+    else:
+        reviews = fetch_reviews(token, stop_at_id=state.get("last_review_id"))
     LOG.info("Fetched %d review(s)", len(reviews))
     if reviews:
         sync_reviews_to_slack(reviews, state, slack, initial_sync)

@@ -9,7 +9,7 @@ from common.slack_client import (
     SlackPermissionError,
     SlackThreadNotFoundError,
 )
-from common.state_manager import save_state, upsert_review
+from common.state_manager import mark_posted, now_iso, save_state, upsert_review
 
 
 LOG = logging.getLogger(__name__)
@@ -28,7 +28,9 @@ def select_new_reviews(
     review_id_getter,
 ) -> list[dict]:
     """Select untracked reviews from a newest-first provider response."""
-    known_ids = set(state.get("reviews", {}))
+    # posted_ids is the permanent dedup source (survives pruning); union it with
+    # the active reviews map so nothing already posted is ever re-posted.
+    known_ids = set(state.get("posted_ids", [])) | set(state.get("reviews", {}))
     if initial_sync:
         return [
             review
@@ -83,6 +85,7 @@ def post_new_reviews(
             review_id,
             slack_ts=slack_ts,
             last_reply_ts=None,
+            posted_at=now_iso(),
             **{
                 reply_sent_key: (
                     bool(reply_sent_getter(review))
@@ -91,6 +94,7 @@ def post_new_reviews(
                 )
             },
         )
+        mark_posted(state, review_id)
         save_state(provider, state)
         LOG.info("Posted %s review %s to Slack thread %s", provider, review_id, slack_ts)
 
@@ -178,6 +182,7 @@ def sync_slack_replies(
             send_reply(review_id, normalized_text)
             entry["last_reply_ts"] = message["ts"]
             entry["last_sent_reply_hash"] = message_hash
+            entry["replied_at"] = now_iso()
             entry[reply_sent_key] = True
             save_state(provider, state)
             LOG.info("Posted Slack reply %s to %s review %s", message["ts"], display_name, review_id)
