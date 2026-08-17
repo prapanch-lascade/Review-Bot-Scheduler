@@ -14,7 +14,7 @@ from common.state_manager import (
     save_state,
     upsert_review,
 )
-from common.utils import current_ist, request_with_retries, stars, utc_to_ist
+from common.utils import current_ist, request_with_retries, utc_to_ist
 
 
 LOG = logging.getLogger(__name__)
@@ -39,32 +39,22 @@ def format_review(review: dict) -> str:
     body = _escape_slack(str(attr.get("body") or "").strip() or "No review text provided.")
     reviewer = _escape_slack(attr.get("reviewerNickname", "Anonymous"))
     territory = _escape_slack(attr.get("territory", "Unknown"))
-    version = _escape_slack(attr.get("appVersionString", "Unknown"))
     reviewed_on = utc_to_ist(attr["createdDate"])
     review_id = _escape_slack(review["id"])
 
     return f"""
-⭐ *New App Review Received*
+*New Appstore Review*
 
-{stars(rating)} *({rating}/5)*
+*Rating:* {rating}/5
+*Title:* {title}
+*Review:* {body}
 
-📝 *Title*
-
-{title}
-
-💬 *Review*
-
-{body}
-
-👤 *Reviewer* : {reviewer}
-🌍 *Country*  : {territory}
-📱 *Version*  : {version}
-📅 *Reviewed* : {reviewed_on}
-🏪 *Platform* : Apple App Store
-
-🆔 *Review ID* : {review_id}
-
-⏰ *Detected* : {current_ist()}
+*Reviewer:* {reviewer}
+*Country:* {territory}
+*Reviewed:* {reviewed_on}
+*Platform:* Apple App Store
+*Review ID:* {review_id}
+*Detected:* {current_ist()}
 """.strip() + "\n\n"
 
 

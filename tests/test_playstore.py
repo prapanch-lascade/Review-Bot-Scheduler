@@ -48,7 +48,7 @@ class PlayStoreTests(unittest.TestCase):
 
         self.assertIn("No Title", message)
         self.assertIn("No review text provided.", message)
-        self.assertIn("(0/5)", message)
+        self.assertIn("0/5", message)
         self.assertIn("Anonymous", message)
         self.assertIn("Unknown", message)
 

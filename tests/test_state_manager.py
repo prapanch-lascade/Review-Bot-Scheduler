@@ -10,10 +10,10 @@ from common.state_manager import load_state, save_state
 
 class StateManagerTests(unittest.TestCase):
     def setUp(self):
-        # The legacy-name tests must not inherit APP_SLUG from the runner env.
+        # The legacy-name tests must not inherit PROJECT_SLUG from the runner env.
         patcher = patch.dict(os.environ, {}, clear=False)
         patcher.start()
-        os.environ.pop("APP_SLUG", None)
+        os.environ.pop("PROJECT_SLUG", None)
         self.addCleanup(patcher.stop)
 
     def test_state_round_trip_and_atomic_file_shape(self):
@@ -44,11 +44,11 @@ class StateManagerTests(unittest.TestCase):
                 save_state("playstore", {"reviews": {}})
             self.assertTrue((state_dir / "playstore_reviews.json").exists())
 
-    def test_app_slug_scopes_state_into_app_folder(self):
+    def test_project_slug_scopes_state_into_app_folder(self):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             with patch("common.state_manager.STATE_DIR", state_dir), patch.dict(
-                os.environ, {"APP_SLUG": "airlines70"}
+                os.environ, {"PROJECT_SLUG": "airlines70"}
             ):
                 save_state("appstore", {"reviews": {}})
                 loaded = load_state("appstore")

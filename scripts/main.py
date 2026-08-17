@@ -16,10 +16,10 @@ def main():
         raise Exception("Provider missing")
 
     provider = sys.argv[1]
-    app_slug = os.environ.get("APP_SLUG", "").strip()
+    project_slug = os.environ.get("PROJECT_SLUG", "").strip()
     LOG.info(
-        "Review sync starting: app=%s provider=%s",
-        app_slug or "(APP_SLUG unset -> legacy single-app state names)",
+        "Review sync starting: project_slug=%s provider=%s",
+        project_slug or "(PROJECT_SLUG unset -> legacy single-app state names)",
         provider,
     )
 

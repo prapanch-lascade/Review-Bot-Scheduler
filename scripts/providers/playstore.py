@@ -12,7 +12,7 @@ from google.oauth2 import service_account
 from common.review_sync import post_new_reviews, sync_slack_replies
 from common.slack_client import SlackClient
 from common.state_manager import load_state, save_if_changed
-from common.utils import IST, current_ist, request_with_retries, stars
+from common.utils import IST, current_ist, request_with_retries
 
 
 LOG = logging.getLogger(__name__)
@@ -253,27 +253,18 @@ def format_review(review: dict) -> str:
     title, body = _split_title_body(_display_value(comment.get("text"), ""))
     rating = _rating_value(comment.get("starRating"))
     return f"""
-⭐ *New App Review Received*
+*New Playstore Review*
 
-{stars(rating)} *({rating}/5)*
+*Rating:* {rating}/5
+*Title:* {_escape_slack(title)}
+*Review:* {_escape_slack(body)}
 
-📝 *Title*
-
-{_escape_slack(title)}
-
-💬 *Review*
-
-{_escape_slack(body)}
-
-👤 *Reviewer* : {_escape_slack(_display_value(review.get("authorName"), "Anonymous"))}
-🌍 *Language* : {_escape_slack(_display_value(comment.get("reviewerLanguage"), "Unknown"))}
-📱 *Version*  : {_escape_slack(_display_value(comment.get("appVersionName"), "Unknown"))}
-📅 *Reviewed* : {_escape_slack(_review_date(comment))}
-🏪 *Platform* : Google Play
-
-🆔 *Review ID* : {_escape_slack(review["reviewId"])}
-
-⏰ *Detected* : {current_ist()}
+*Reviewer:* {_escape_slack(_display_value(review.get("authorName"), "Anonymous"))}
+*Language:* {_escape_slack(_display_value(comment.get("reviewerLanguage"), "Unknown"))}
+*Reviewed:* {_escape_slack(_review_date(comment))}
+*Platform:* Google Play
+*Review ID:* {_escape_slack(review["reviewId"])}
+*Detected:* {current_ist()}
 """.strip() + "\n\n"
 
 

@@ -10,9 +10,9 @@ or database.
 
 Design:
 - **Centralised architecture.** An **app-repo trigger** fires the central workflow via
-  `repository_dispatch`, passing the app slug in the payload (plus manual `workflow_dispatch`). The
+  `repository_dispatch`, passing the project slug in the payload (plus manual `workflow_dispatch`). The
   central workflow runs App Store + Google Play as a matrix and writes per-app state under
-  `state/<app>/`. All logic — pagination, dedup, bounded polling/pruning, provider guards — is
+  `state/<project_slug>/`. All logic — pagination, dedup, bounded polling/pruning, provider guards — is
   provider- and app-neutral.
 - **Secrets from the central repo's GitHub Actions secrets** (`prapanch-lascade/Review-Bot-Scheduler`).
   Infisical is not used for now. One app (**airlines70**) is onboarded; its credentials are the
@@ -33,7 +33,7 @@ App repo (airline70-flutter)   .github/workflows/review-sync-trigger.yml
    token: CENTRAL_DISPATCH_TOKEN   (allowed to dispatch to the central repo)
    repository: prapanch-lascade/Review-Bot-Scheduler
    event-type: review-sync
-   client-payload: { "app": "airlines70" }
+   client-payload: { "project_slug": "airlines70" }
         │
         ▼
 Central repo — .github/workflows/review-sync.yml
@@ -129,7 +129,7 @@ boundary always survives.
 ## 5. Code — modules and behavior
 
 ### 5.1 Entry & config
-- `scripts/main.py` — `main.py <provider>`; logs `Review sync starting: app=<APP_SLUG> provider=<provider>`; dispatches to `run_appstore()` / `run_playstore()`. `APP_SLUG` (state-folder name) comes from the workflow env.
+- `scripts/main.py` — `main.py <provider>`; logs `Review sync starting: project_slug=<PROJECT_SLUG> provider=<provider>`; dispatches to `run_appstore()` / `run_playstore()`. `PROJECT_SLUG` (state-folder name) comes from the workflow env.
 - `scripts/common/jwt_generator.py` — builds the App Store Connect ES256 JWT (20-min expiry) from `APPSTORE_*` env vars.
 - Google auth lives in `playstore._credentials()` — loads `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, gets an OAuth token via `google-auth`.
 
@@ -138,7 +138,7 @@ boundary always survives.
 - `scripts/common/slack_client.py` — Slack Web API wrapper: `post_review` (returns thread `ts`), `replies` (paginated), `identify_bot`, and `is_human_message` (drops the bot's own parent, other bots, and any message with a `subtype` = system/edited/workflow). Typed errors: permission (fatal), thread-not-found (disable thread), rate-limited.
 
 ### 5.3 State — `scripts/common/state_manager.py`
-- `_state_file(provider)` → `state/<APP_SLUG>/<provider>.json` (folder auto-created), legacy flat name when `APP_SLUG` unset (keeps tests working).
+- `_state_file(provider)` → `state/<PROJECT_SLUG>/<provider>.json` (folder auto-created), legacy flat name when `PROJECT_SLUG` unset (keeps tests working).
 - `load_state` — v2 migration/backfill (§4); logs the resolved path and fresh-vs-incremental.
 - `save_state` — atomic write (temp file in the target folder → `fsync` → `os.replace`).
 - `upsert_review`, `save_if_changed` (no-op when nothing meaningful changed → no git churn).
@@ -198,7 +198,7 @@ set and stays small, so the next run polls only active threads.
 ### 6.1 Central — `.github/workflows/review-sync.yml`
 ```yaml
 name: Review Sync (Central)
-run-name: "review-sync · ${{ github.event.client_payload.app || inputs.app }}"
+run-name: "review-sync · ${{ github.event.client_payload.project_slug || inputs.project_slug }}"
 
 on:
   repository_dispatch:
@@ -212,7 +212,7 @@ on:
         default: "airlines70"
 
 concurrency:
-  group: review-sync-${{ github.event.client_payload.app || inputs.app }}
+  group: review-sync-${{ github.event.client_payload.project_slug || inputs.project_slug }}
   cancel-in-progress: false
 
 jobs:
@@ -235,10 +235,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
       - name: Run Tests
-        run: PYTHONPATH=scripts python -m unittest discover -s tests -v   # APP_SLUG unset → clean env
+        run: PYTHONPATH=scripts python -m unittest discover -s tests -v   # PROJECT_SLUG unset → clean env
       - name: Sync Reviews and Slack Replies
         env:
-          APP_SLUG: ${{ github.event.client_payload.app || inputs.app }}
+          PROJECT_SLUG: ${{ github.event.client_payload.project_slug || inputs.project_slug }}
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
@@ -252,8 +252,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.client_payload.app || inputs.app }}-${{ matrix.provider }}-state
-          path: state/${{ github.event.client_payload.app || inputs.app }}/${{ matrix.provider }}.json
+          name: ${{ github.event.client_payload.project_slug || inputs.project_slug }}-${{ matrix.provider }}-state
+          path: state/${{ github.event.client_payload.project_slug || inputs.project_slug }}/${{ matrix.provider }}.json
           if-no-files-found: warn
 
   commit-state:
@@ -265,28 +265,28 @@ jobs:
     permissions:
       contents: write
     env:
-      APP: ${{ github.event.client_payload.app || inputs.app }}
+      PROJECT_SLUG: ${{ github.event.client_payload.project_slug || inputs.project_slug }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/download-artifact@v4
-        with: { name: ${{ env.APP }}-appstore-state, path: state/${{ env.APP }} }
+        with: { name: ${{ env.PROJECT_SLUG }}-appstore-state, path: state/${{ env.PROJECT_SLUG }} }
         continue-on-error: true
       - uses: actions/download-artifact@v4
-        with: { name: ${{ env.APP }}-playstore-state, path: state/${{ env.APP }} }
+        with: { name: ${{ env.PROJECT_SLUG }}-playstore-state, path: state/${{ env.PROJECT_SLUG }} }
         continue-on-error: true
       - name: Commit Updated State
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          APP_DIR="state/${APP}"
+          APP_DIR="state/${PROJECT_SLUG}"
 
           git add "${APP_DIR}" 2>/dev/null || true      # whole folder → single-platform apps stage cleanly
           if git diff --cached --quiet; then echo "No state changes."; exit 0; fi
 
           merge_remote() {
-            f="${APP_DIR}/$1.json"; r="/tmp/remote_${APP}_$1.json"
+            f="${APP_DIR}/$1.json"; r="/tmp/remote_${PROJECT_SLUG}_$1.json"
             [ -f "$f" ] || return 0
             if git show "origin/${GITHUB_REF_NAME}:${f}" > "$r" 2>/dev/null; then
               python scripts/merge_state.py "$r" "$f"
@@ -304,15 +304,15 @@ jobs:
             git reset --mixed "origin/${GITHUB_REF_NAME}"
             git add "${APP_DIR}" 2>/dev/null || true
             if git diff --cached --quiet; then echo "Remote already current."; exit 0; fi
-            git commit -m "Update review state (${APP})"
+            git commit -m "Update review state (${PROJECT_SLUG})"
             if git push; then echo "Pushed on attempt ${attempt}/4."; exit 0; fi
             echo "Push rejected; retry ${attempt}/4."
           done
           echo "Unable to push state after 4 attempts."; exit 1
 ```
 
-Notes: tests run before `APP_SLUG` is set (legacy-name state tests stay green). The prune runs after
-the merge so pruning is never resurrected by the union. `git add "state/${APP}"` (folder) is used
+Notes: tests run before `PROJECT_SLUG` is set (legacy-name state tests stay green). The prune runs after
+the merge so pruning is never resurrected by the union. `git add "state/${PROJECT_SLUG}"` (folder) is used
 because `git add fileA fileB` with a missing file is fatal and stages nothing — which would break
 single-platform apps.
 
@@ -335,7 +335,7 @@ jobs:
           repository: prapanch-lascade/Review-Bot-Scheduler
           event-type: review-sync
           client-payload: >-
-            { "app": "airlines70" }
+            { "project_slug": "airlines70" }
 ```
 
 ---
@@ -365,18 +365,18 @@ jobs:
 | Edited old Google review re-posted after prune | `posted_ids` persistent dedup (§4, §5.4) |
 | Concurrent pushes rejected | reconcile-before-commit + 4-attempt retry (§6.1) |
 | JSON state can't be git-rebased/merged | JSON-space merge (`merge_state.py`) + `git reset --mixed` |
-| Single-platform app never persists state | `git add "state/<app>/"` folder, not `git add a b` |
+| Single-platform app never persists state | `git add "state/<project_slug>/"` folder, not `git add a b` |
 | iOS-only / Android-only app | provider-presence guards skip the absent platform |
 | Late reply after days | supported up to `OPEN_POLL_WINDOW_DAYS` (tunable) |
 
 ---
 
 ## 9. Verification
-1. **Unit tests** (no `APP_SLUG`): existing suite green; add tests for `select_new_reviews` deduping via `posted_ids`, `prune_inactive` (keeps open<30d, replied<2d, drops the rest, preserves ids), pagination (multi-page fetch + stop-at-boundary), and `merge_states` unioning `posted_ids`.
+1. **Unit tests** (no `PROJECT_SLUG`): existing suite green; add tests for `select_new_reviews` deduping via `posted_ids`, `prune_inactive` (keeps open<30d, replied<2d, drops the rest, preserves ids), pagination (multi-page fetch + stop-at-boundary), and `merge_states` unioning `posted_ids`.
 2. **Prune-after-merge converges**: remote has an old inactive R1 + R2; run merge → prune → commit; assert R1 is gone and stays gone on a second cycle.
 3. **Re-post safety**: after pruning R1, feed a fetch that re-includes R1 (edited/bumped) and assert it is NOT re-posted (it's in `posted_ids`).
 4. **Concurrent push**: two runs racing; the rejected one retries and both apps'/providers' state survive.
-5. **End-to-end**: add the 8 central-repo secrets; run the central workflow (`workflow_dispatch` with `app=airlines70`, or the app-repo trigger). Confirm both provider cells run (or self-skip), artifacts upload, prune+commit+push happen, Slack posts land in the channel, and a thread reply round-trips to the store. Confirm a second run polls only the small active set (check the "Polling …" log count).
+5. **End-to-end**: add the 8 central-repo secrets; run the central workflow (`workflow_dispatch` with `project_slug=airlines70`, or the app-repo trigger). Confirm both provider cells run (or self-skip), artifacts upload, prune+commit+push happen, Slack posts land in the channel, and a thread reply round-trips to the store. Confirm a second run polls only the small active set (check the "Polling …" log count).
 
 ---
 
@@ -401,7 +401,7 @@ jobs:
 ---
 
 ## 11. Future — multiple apps
-The architecture is already multi-app (per-app triggers, `app` in the payload, per-app `state/<app>/`
+The architecture is already multi-app (per-app triggers, `project_slug` in the payload, per-app `state/<project_slug>/`
 folders). The **only** thing that changes when more apps are added is **secret provisioning** — the
 fixed-name central-repo secrets hold one app's credentials. To scale, move per-app secrets into
 **Infisical** (a `/reviews` folder per app project),
