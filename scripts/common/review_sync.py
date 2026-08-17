@@ -74,6 +74,10 @@ def post_new_reviews(
     )
     if not new_reviews:
         LOG.info("No new %s reviews to send", provider)
+        # Escape a stuck initial sync (see appstore.sync_reviews_to_slack).
+        if reviews and not state.get("last_review_id"):
+            state["last_review_id"] = review_id_getter(reviews[0])
+            save_state(provider, state)
         return
 
     LOG.info("Sending %d new %s review(s) to Slack", len(new_reviews), provider)

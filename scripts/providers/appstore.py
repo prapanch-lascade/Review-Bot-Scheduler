@@ -184,6 +184,12 @@ def sync_reviews_to_slack(reviews: list[dict], state: dict, slack: SlackClient, 
     new_reviews = _new_reviews(reviews, state, initial_sync)
     if not new_reviews:
         LOG.info("No new reviews to send")
+        # Escape a stuck initial sync: if every fetched review is already known
+        # but the boundary was never recorded, set it so the next run goes
+        # incremental (and polls replies). No churn once last_review_id is set.
+        if reviews and not state.get("last_review_id"):
+            state["last_review_id"] = reviews[0]["id"]
+            save_state("appstore", state)
         return
 
     LOG.info("Sending %d new review(s) to Slack", len(new_reviews))
