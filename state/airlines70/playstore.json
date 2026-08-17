@@ -1,0 +1,16 @@
+{
+    "state_version": 2,
+    "last_review_id": "f6670d25-fda5-465b-b1b8-c1ef9b098c42",
+    "last_checked": "2026-08-17T08:43:28.850254+00:00",
+    "posted_ids": [
+        "f6670d25-fda5-465b-b1b8-c1ef9b098c42"
+    ],
+    "reviews": {
+        "f6670d25-fda5-465b-b1b8-c1ef9b098c42": {
+            "slack_ts": "1786956208.773289",
+            "last_reply_ts": null,
+            "posted_at": "2026-08-17T08:43:28.848538+00:00",
+            "google_reply_sent": false
+        }
+    }
+}
